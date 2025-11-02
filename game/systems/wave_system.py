@@ -128,3 +128,55 @@ class WaveSystem:
         # Wave failed - maybe apply penalty or end game
         print(f"Wave {self.current_wave} failed - timeout!")
         
+        # For now, just move to next wave but with penalty
+        game.player.take_damage(20)  # Penalty damage
+        
+        self._prepare_next_wave(game)
+    
+    def _prepare_next_wave(self, game: 'NotLifeGame'):
+        """Prepare for the next wave"""
+        # Clear remaining enemies
+        game.enemies.empty()
+        
+        # Show upgrade screen or brief rest period
+        # For now, automatically start next wave after delay
+        next_wave = self.current_wave + 1
+        
+        # Use pygame timer to start next wave after delay
+        pygame.time.set_timer(pygame.USEREVENT + 1, 3000)  # 3 second delay
+        
+        # Store next wave number to start
+        self.next_wave = next_wave
+    
+    def on_enemy_defeated(self):
+        """Called when an enemy is defeated"""
+        self.enemies_defeated += 1
+    
+    def get_wave_progress(self) -> float:
+        """Get current wave progress (0.0 to 1.0)"""
+        if not self.is_wave_active or self.total_wave_enemies == 0:
+            return 0.0
+        
+        enemy_progress = self.enemies_defeated / self.total_wave_enemies
+        time_progress = self.wave_timer / self.wave_duration
+        
+        # Progress is based on both enemies defeated and time
+        return min(1.0, (enemy_progress + time_progress) / 2)
+    
+    def get_wave_time_remaining(self) -> float:
+        """Get remaining time in current wave"""
+        return max(0.0, self.wave_duration - self.wave_timer)
+    
+    def get_wave_info(self) -> dict:
+        """Get information about current wave"""
+        config = self._get_wave_config(self.current_wave)
+        
+        return {
+            'number': self.current_wave,
+            'description': config['description'],
+            'enemies_defeated': self.enemies_defeated,
+            'total_enemies': self.total_wave_enemies,
+            'time_remaining': self.get_wave_time_remaining(),
+            'progress': self.get_wave_progress(),
+            'is_active': self.is_wave_active
+        }

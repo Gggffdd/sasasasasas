@@ -1,18 +1,16 @@
 """
-NOTLIFY API - Digital Notification Service
+NOTLIFY API - Simple Notification Service
+Lightweight version without pydantic dependencies
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from typing import List, Optional
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from fastapi.responses import HTMLResponse, JSONResponse
 import logging
-import os
 import asyncio
 from datetime import datetime
+import json
+import re
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="NOTLIFY API",
-    description="Digital Notification Service",
+    description="Simple Notification Service",
     version="1.0.0"
 )
 
@@ -33,120 +31,132 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Модели данных
-class NotificationRequest(BaseModel):
-    email: EmailStr
-    message: str
-    subject: str = "Notification from NOTLIFY"
-    priority: str = "normal"
-
-class NotificationResponse(BaseModel):
-    id: str
-    status: str
-    message: str
-    timestamp: str
-
-class HealthResponse(BaseModel):
-    status: str
-    version: str
-    timestamp: str
-
-# In-memory storage (в продакшене заменить на базу данных)
+# In-memory storage
 notifications_db = []
 
-# Конфигурация
-SMTP_CONFIG = {
-    "host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
-    "port": int(os.getenv("SMTP_PORT", 587)),
-    "username": os.getenv("SMTP_USERNAME", ""),
-    "password": os.getenv("SMTP_PASSWORD", "")
-}
+def validate_email(email):
+    """Простая валидация email"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
-async def send_email_notification(notification: NotificationRequest):
+async def send_email_notification(email, subject, message):
     """Асинхронная отправка email уведомления"""
     try:
-        # Имитация отправки email (в реальном приложении используйте реальный SMTP)
-        logger.info(f"Sending notification to {notification.email}")
-        logger.info(f"Subject: {notification.subject}")
-        logger.info(f"Message: {notification.message}")
+        logger.info(f"Sending notification to {email}")
+        logger.info(f"Subject: {subject}")
+        logger.info(f"Message: {message}")
         
-        # Здесь будет реальная логика отправки email
-        # msg = MIMEMultipart()
-        # msg['From'] = SMTP_CONFIG['username']
-        # msg['To'] = notification.email
-        # msg['Subject'] = notification.subject
-        # msg.attach(MIMEText(notification.message, 'plain'))
+        # Имитация отправки
+        await asyncio.sleep(0.5)
         
-        # with smtplib.SMTP(SMTP_CONFIG['host'], SMTP_CONFIG['port']) as server:
-        #     server.starttls()
-        #     server.login(SMTP_CONFIG['username'], SMTP_CONFIG['password'])
-        #     server.send_message(msg)
-        
-        await asyncio.sleep(1)  # Имитация задержки сети
-        
-        logger.info(f"Notification sent successfully to {notification.email}")
+        logger.info(f"Notification sent successfully to {email}")
         return True
         
     except Exception as e:
         logger.error(f"Failed to send notification: {str(e)}")
         return False
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Корневой endpoint"""
-    return {
-        "message": "Welcome to NOTLIFY API",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/api/health",
-            "send_notification": "/api/notify",
-            "get_notifications": "/api/notifications"
-        }
-    }
+    """Главная страница"""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>NOTLIFY - Notification Service</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #0f0f23; color: white; }
+            .container { max-width: 800px; margin: 0 auto; }
+            .header { text-align: center; margin-bottom: 40px; }
+            .logo { font-size: 3em; color: #4d96ff; margin-bottom: 10px; }
+            .endpoint { background: rgba(255,255,255,0.1); padding: 20px; margin: 10px 0; border-radius: 8px; }
+            code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">NOTLIFY</div>
+                <p>Simple Notification Service API</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3>Health Check</h3>
+                <p><code>GET /api/health</code></p>
+                <p>Check API status</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3>Send Notification</h3>
+                <p><code>POST /api/notify</code></p>
+                <p>Send a notification</p>
+                <p><strong>Body:</strong> {"email": "user@example.com", "message": "Hello!"}</p>
+            </div>
+            
+            <div class="endpoint">
+                <h3>Get Notifications</h3>
+                <p><code>GET /api/notifications</code></p>
+                <p>Get notification history</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
-@app.get("/api/health", response_model=HealthResponse)
+@app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
-    return HealthResponse(
-        status="healthy",
-        version="1.0.0",
-        timestamp=datetime.now().isoformat()
-    )
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat()
+    }
 
-@app.post("/api/notify", response_model=NotificationResponse)
+@app.post("/api/notify")
 async def send_notification(
-    request: NotificationRequest, 
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    email: str = Form(...),
+    message: str = Form(...),
+    subject: str = Form("Notification from NOTLIFY")
 ):
     """Отправка уведомления"""
     try:
-        notification_id = f"notify_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+        # Валидация email
+        if not validate_email(email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
         
-        # Сохраняем в "базу данных"
+        if not message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        # Создаем ID уведомления
+        notification_id = f"notify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Сохраняем уведомление
         notification_data = {
             "id": notification_id,
-            "email": request.email,
-            "message": request.message,
-            "subject": request.subject,
-            "priority": request.priority,
+            "email": email,
+            "message": message,
+            "subject": subject,
             "status": "pending",
             "timestamp": datetime.now().isoformat()
         }
         notifications_db.append(notification_data)
         
-        # Отправляем уведомление в фоновом режиме
-        background_tasks.add_task(send_email_notification, request)
+        # Отправляем в фоне
+        background_tasks.add_task(send_email_notification, email, subject, message)
         
         # Обновляем статус
         notification_data["status"] = "sent"
         
-        return NotificationResponse(
-            id=notification_id,
-            status="sent",
-            message="Notification queued successfully",
-            timestamp=datetime.now().isoformat()
-        )
+        return {
+            "id": notification_id,
+            "status": "sent",
+            "message": "Notification queued successfully",
+            "timestamp": datetime.now().isoformat()
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Notification failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to send notification: {str(e)}")
@@ -177,10 +187,8 @@ async def get_notification(notification_id: str):
     raise HTTPException(status_code=404, detail="Notification not found")
 
 # Инициализация
-import random
 logger.info("NOTLIFY API started successfully")
 
-# Для Vercel
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
